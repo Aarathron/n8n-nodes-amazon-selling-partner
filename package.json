@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-amazon-selling-partner",
-  "version": "1.9.5",
+  "version": "1.9.6",
   "description": "Custom n8n node for the Amazon Selling Partner API",
   "main": "index.js",
   "scripts": {

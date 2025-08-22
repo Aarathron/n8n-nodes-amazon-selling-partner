@@ -776,12 +776,75 @@ function normalizeCurrency(data: NormalizedRow[], _baseCurrency: string, _exchan
 }
 
 function parseReportCSV(csvData: string, params: any): AnalyticsDataPoint[] | { data: AnalyticsDataPoint[], diagnostics: any } {
-	// Strip BOM and normalize newlines
+	// Try JSON first (Business Reports often return JSON now)
+	const trimmed = csvData.replace(/^\uFEFF/, '').trim();
+	const looksLikeJson = trimmed.startsWith('{') || trimmed.startsWith('[') || /salesAndTrafficByAsin|reportSpecification/.test(trimmed.slice(0, 2048));
+
+	const buildJsonDiagnostics = (json: any, rows: AnalyticsDataPoint[]) => ({
+		jsonParsing: {
+			rawDataLength: csvData.length,
+			hasSalesAndTrafficByAsin: Array.isArray(json?.salesAndTrafficByAsin),
+			asinGranularity: json?.reportSpecification?.reportOptions?.asinGranularity,
+			dateGranularity: json?.reportSpecification?.reportOptions?.dateGranularity,
+			dateRange: { start: json?.reportSpecification?.dataStartTime, end: json?.reportSpecification?.dataEndTime },
+			marketplaceIds: json?.reportSpecification?.marketplaceIds,
+			asinCount: Array.isArray(json?.salesAndTrafficByAsin) ? json.salesAndTrafficByAsin.length : 0,
+			totalRows: rows.length,
+			sampleAsin: Array.isArray(json?.salesAndTrafficByAsin) && json.salesAndTrafficByAsin[0] ? (json.salesAndTrafficByAsin[0].asin || json.salesAndTrafficByAsin[0].parentAsin || json.salesAndTrafficByAsin[0].childAsin) : null,
+		},
+	});
+
+	const mapNumber = (v: any): number | null => {
+		if (v === null || v === undefined) return null;
+		if (typeof v === 'number') return v;
+		const n = parseFloat(String(v));
+		return Number.isFinite(n) ? n : null;
+	};
+
+	if (looksLikeJson) {
+		try {
+			const json = JSON.parse(trimmed);
+			const items: any[] = Array.isArray(json?.salesAndTrafficByAsin) ? json.salesAndTrafficByAsin : [];
+			const rows: AnalyticsDataPoint[] = items
+				.map((item: any) => {
+					const asinId = item?.asin || item?.childAsin || item?.parentAsin || '';
+					const traffic = item?.trafficByAsin || {};
+					const sales = item?.salesByAsin || {};
+					const metrics: Record<string, number | null> = {};
+
+					metrics.sessions = mapNumber(traffic.sessions);
+					metrics.pageViews = mapNumber(traffic.pageViews);
+					metrics.unitSessionPercentage = mapNumber(traffic.unitSessionPercentage);
+					metrics.buyBoxPercentage = mapNumber(traffic.buyBoxPercentage);
+
+					metrics.unitsOrdered = mapNumber(sales.unitsOrdered);
+					metrics.unitsOrderedB2B = mapNumber(sales.unitsOrderedB2B);
+					metrics.orderedProductSales = mapNumber(sales?.orderedProductSales?.amount ?? sales.orderedProductSales);
+					metrics.orderedProductSalesB2B = mapNumber(sales?.orderedProductSalesB2B?.amount ?? sales.orderedProductSalesB2B);
+
+					return {
+						asin: asinId,
+						marketplaceId: Array.isArray(params?.marketplaceIds) && params.marketplaceIds.length ? params.marketplaceIds[0] : '',
+						date: params?.endDate || new Date().toISOString(),
+						metrics,
+					} as AnalyticsDataPoint;
+				})
+				.filter((r) => !!r.asin);
+
+			if (params?.advancedOptions?.includeDiagnostics) {
+				return { data: rows, diagnostics: buildJsonDiagnostics(json, rows) };
+			}
+			return rows;
+		} catch {
+			// fall through to CSV parsing
+		}
+	}
+
+	// CSV fallback
 	const text = csvData.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
 	const delimiter = text.includes('\t') ? '\t' : ',';
-	const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+	const lines = text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
 
-	// Simple CSV splitter with quote support
 	function split(line: string): string[] {
 		if (delimiter === '\t') return line.split('\t');
 		const out: string[] = [];
@@ -790,8 +853,12 @@ function parseReportCSV(csvData: string, params: any): AnalyticsDataPoint[] | { 
 		for (let i = 0; i < line.length; i++) {
 			const ch = line[i];
 			if (ch === '"') {
-				if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
-				else { inQuotes = !inQuotes; }
+				if (inQuotes && line[i + 1] === '"') {
+					cur += '"';
+					i++;
+				} else {
+					inQuotes = !inQuotes;
+				}
 			} else if (ch === delimiter && !inQuotes) {
 				out.push(cur);
 				cur = '';
@@ -800,19 +867,17 @@ function parseReportCSV(csvData: string, params: any): AnalyticsDataPoint[] | { 
 			}
 		}
 		out.push(cur);
-		return out.map(s => s.trim());
+		return out.map((s) => s.trim());
 	}
 
-	// Find header row (look for ASIN + Sessions/Page Views)
-	let headerIdx = lines.findIndex(l => /asin/i.test(l) && (/(^|[^a-z])sessions([^a-z]|$)/i.test(l) || /page[\s-]*views/i.test(l)));
+	let headerIdx = lines.findIndex((l) => /asin/i.test(l) && (/(^|[^a-z])sessions([^a-z]|$)/i.test(l) || /page[\s-]*views/i.test(l)));
 	if (headerIdx === -1 && lines.length > 0) headerIdx = 0;
 	if (headerIdx === -1) return [];
 
 	const rawHeaders = split(lines[headerIdx]);
 	const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
-	const headers = rawHeaders.map(h => norm(h));
+	const headers = rawHeaders.map((h) => norm(h));
 
-	// Column helpers
 	const idx = (...cands: string[]) => {
 		for (const c of cands) {
 			const i = headers.indexOf(c);
@@ -824,7 +889,6 @@ function parseReportCSV(csvData: string, params: any): AnalyticsDataPoint[] | { 
 	const asinIdx = idx('asin', 'childasin');
 	const dateIdx = idx('date');
 
-	// Metric indices with header variations
 	const col = {
 		sessions: idx('sessions'),
 		pageViews: idx('pageviews'),
@@ -842,11 +906,9 @@ function parseReportCSV(csvData: string, params: any): AnalyticsDataPoint[] | { 
 		parentAsin: idx('parentasin'),
 	};
 
-	// Parsers
 	const toNum = (v?: string) => {
 		if (!v) return null;
 		let s = v.replace(/[\s]/g, '').replace(/[^\d.,-]/g, '');
-		// Remove thousands separators conservatively
 		if (s.indexOf(',') !== -1 && s.indexOf('.') !== -1) s = s.replace(/,/g, '');
 		else if (delimiter === ',' && s.indexOf(',') !== -1 && s.indexOf('.') === -1) s = s.replace(/,/g, '.');
 		else s = s.replace(/,/g, '');
@@ -858,8 +920,7 @@ function parseReportCSV(csvData: string, params: any): AnalyticsDataPoint[] | { 
 		const hasPct = v.includes('%');
 		const n = toNum(v);
 		if (n === null) return null;
-		// Keep percentages as 0–100 scale for consistency in output
-		return hasPct ? n : (n <= 1 ? n * 100 : n);
+		return hasPct ? n : n <= 1 ? n * 100 : n;
 	};
 	const toCurrency = (v?: string) => toNum(v);
 
@@ -867,7 +928,6 @@ function parseReportCSV(csvData: string, params: any): AnalyticsDataPoint[] | { 
 	for (let i = headerIdx + 1; i < lines.length; i++) {
 		const rowStr = lines[i];
 		if (!rowStr) continue;
-		// Skip grand/summary rows
 		if (/^total\b/i.test(rowStr) || /^grand\s*total\b/i.test(rowStr)) continue;
 
 		const vals = split(rowStr);
@@ -877,7 +937,7 @@ function parseReportCSV(csvData: string, params: any): AnalyticsDataPoint[] | { 
 		if (!asin || /^total$/i.test(asin)) continue;
 
 		const dateRaw = dateIdx !== -1 ? get(dateIdx) : '';
-		const dateIso = dateRaw ? new Date(dateRaw).toISOString() : (params?.endDate || new Date().toISOString());
+		const dateIso = dateRaw ? new Date(dateRaw).toISOString() : params?.endDate || new Date().toISOString();
 
 		const metrics: Record<string, number | null> = {};
 		if (col.sessions !== -1) metrics.sessions = toNum(get(col.sessions));
@@ -903,7 +963,6 @@ function parseReportCSV(csvData: string, params: any): AnalyticsDataPoint[] | { 
 		});
 	}
 
-	// Collect diagnostics if enabled
 	if (params?.advancedOptions?.includeDiagnostics) {
 		const diagnostics = {
 			csvParsing: {
@@ -916,10 +975,9 @@ function parseReportCSV(csvData: string, params: any): AnalyticsDataPoint[] | { 
 				columnMapping: col,
 				totalRows: out.length,
 				skippedRows: lines.length - headerIdx - 1 - out.length,
-				sampleRows: lines.slice(headerIdx, Math.min(headerIdx + 3, lines.length))
-			}
+				sampleRows: lines.slice(headerIdx, Math.min(headerIdx + 3, lines.length)),
+			},
 		};
-
 		return { data: out, diagnostics };
 	}
 

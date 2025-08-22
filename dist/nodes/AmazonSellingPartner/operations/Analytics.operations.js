@@ -620,11 +620,69 @@ function normalizeCurrency(data, _baseCurrency, _exchangeRates) {
     return data;
 }
 function parseReportCSV(csvData, params) {
-    // Strip BOM and normalize newlines
+    // Try JSON first (Business Reports often return JSON now)
+    const trimmed = csvData.replace(/^\uFEFF/, '').trim();
+    const looksLikeJson = trimmed.startsWith('{') || trimmed.startsWith('[') || /salesAndTrafficByAsin|reportSpecification/.test(trimmed.slice(0, 2048));
+    const buildJsonDiagnostics = (json, rows) => ({
+        jsonParsing: {
+            rawDataLength: csvData.length,
+            hasSalesAndTrafficByAsin: Array.isArray(json?.salesAndTrafficByAsin),
+            asinGranularity: json?.reportSpecification?.reportOptions?.asinGranularity,
+            dateGranularity: json?.reportSpecification?.reportOptions?.dateGranularity,
+            dateRange: { start: json?.reportSpecification?.dataStartTime, end: json?.reportSpecification?.dataEndTime },
+            marketplaceIds: json?.reportSpecification?.marketplaceIds,
+            asinCount: Array.isArray(json?.salesAndTrafficByAsin) ? json.salesAndTrafficByAsin.length : 0,
+            totalRows: rows.length,
+            sampleAsin: Array.isArray(json?.salesAndTrafficByAsin) && json.salesAndTrafficByAsin[0] ? (json.salesAndTrafficByAsin[0].asin || json.salesAndTrafficByAsin[0].parentAsin || json.salesAndTrafficByAsin[0].childAsin) : null,
+        },
+    });
+    const mapNumber = (v) => {
+        if (v === null || v === undefined)
+            return null;
+        if (typeof v === 'number')
+            return v;
+        const n = parseFloat(String(v));
+        return Number.isFinite(n) ? n : null;
+    };
+    if (looksLikeJson) {
+        try {
+            const json = JSON.parse(trimmed);
+            const items = Array.isArray(json?.salesAndTrafficByAsin) ? json.salesAndTrafficByAsin : [];
+            const rows = items
+                .map((item) => {
+                const asinId = item?.asin || item?.childAsin || item?.parentAsin || '';
+                const traffic = item?.trafficByAsin || {};
+                const sales = item?.salesByAsin || {};
+                const metrics = {};
+                metrics.sessions = mapNumber(traffic.sessions);
+                metrics.pageViews = mapNumber(traffic.pageViews);
+                metrics.unitSessionPercentage = mapNumber(traffic.unitSessionPercentage);
+                metrics.buyBoxPercentage = mapNumber(traffic.buyBoxPercentage);
+                metrics.unitsOrdered = mapNumber(sales.unitsOrdered);
+                metrics.unitsOrderedB2B = mapNumber(sales.unitsOrderedB2B);
+                metrics.orderedProductSales = mapNumber(sales?.orderedProductSales?.amount ?? sales.orderedProductSales);
+                metrics.orderedProductSalesB2B = mapNumber(sales?.orderedProductSalesB2B?.amount ?? sales.orderedProductSalesB2B);
+                return {
+                    asin: asinId,
+                    marketplaceId: Array.isArray(params?.marketplaceIds) && params.marketplaceIds.length ? params.marketplaceIds[0] : '',
+                    date: params?.endDate || new Date().toISOString(),
+                    metrics,
+                };
+            })
+                .filter((r) => !!r.asin);
+            if (params?.advancedOptions?.includeDiagnostics) {
+                return { data: rows, diagnostics: buildJsonDiagnostics(json, rows) };
+            }
+            return rows;
+        }
+        catch {
+            // fall through to CSV parsing
+        }
+    }
+    // CSV fallback
     const text = csvData.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
     const delimiter = text.includes('\t') ? '\t' : ',';
-    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    // Simple CSV splitter with quote support
+    const lines = text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
     function split(line) {
         if (delimiter === '\t')
             return line.split('\t');
@@ -651,18 +709,16 @@ function parseReportCSV(csvData, params) {
             }
         }
         out.push(cur);
-        return out.map(s => s.trim());
+        return out.map((s) => s.trim());
     }
-    // Find header row (look for ASIN + Sessions/Page Views)
-    let headerIdx = lines.findIndex(l => /asin/i.test(l) && (/(^|[^a-z])sessions([^a-z]|$)/i.test(l) || /page[\s-]*views/i.test(l)));
+    let headerIdx = lines.findIndex((l) => /asin/i.test(l) && (/(^|[^a-z])sessions([^a-z]|$)/i.test(l) || /page[\s-]*views/i.test(l)));
     if (headerIdx === -1 && lines.length > 0)
         headerIdx = 0;
     if (headerIdx === -1)
         return [];
     const rawHeaders = split(lines[headerIdx]);
     const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
-    const headers = rawHeaders.map(h => norm(h));
-    // Column helpers
+    const headers = rawHeaders.map((h) => norm(h));
     const idx = (...cands) => {
         for (const c of cands) {
             const i = headers.indexOf(c);
@@ -673,7 +729,6 @@ function parseReportCSV(csvData, params) {
     };
     const asinIdx = idx('asin', 'childasin');
     const dateIdx = idx('date');
-    // Metric indices with header variations
     const col = {
         sessions: idx('sessions'),
         pageViews: idx('pageviews'),
@@ -690,12 +745,10 @@ function parseReportCSV(csvData, params) {
         sku: idx('sku'),
         parentAsin: idx('parentasin'),
     };
-    // Parsers
     const toNum = (v) => {
         if (!v)
             return null;
         let s = v.replace(/[\s]/g, '').replace(/[^\d.,-]/g, '');
-        // Remove thousands separators conservatively
         if (s.indexOf(',') !== -1 && s.indexOf('.') !== -1)
             s = s.replace(/,/g, '');
         else if (delimiter === ',' && s.indexOf(',') !== -1 && s.indexOf('.') === -1)
@@ -712,8 +765,7 @@ function parseReportCSV(csvData, params) {
         const n = toNum(v);
         if (n === null)
             return null;
-        // Keep percentages as 0–100 scale for consistency in output
-        return hasPct ? n : (n <= 1 ? n * 100 : n);
+        return hasPct ? n : n <= 1 ? n * 100 : n;
     };
     const toCurrency = (v) => toNum(v);
     const out = [];
@@ -721,7 +773,6 @@ function parseReportCSV(csvData, params) {
         const rowStr = lines[i];
         if (!rowStr)
             continue;
-        // Skip grand/summary rows
         if (/^total\b/i.test(rowStr) || /^grand\s*total\b/i.test(rowStr))
             continue;
         const vals = split(rowStr);
@@ -730,7 +781,7 @@ function parseReportCSV(csvData, params) {
         if (!asin || /^total$/i.test(asin))
             continue;
         const dateRaw = dateIdx !== -1 ? get(dateIdx) : '';
-        const dateIso = dateRaw ? new Date(dateRaw).toISOString() : (params?.endDate || new Date().toISOString());
+        const dateIso = dateRaw ? new Date(dateRaw).toISOString() : params?.endDate || new Date().toISOString();
         const metrics = {};
         if (col.sessions !== -1)
             metrics.sessions = toNum(get(col.sessions));
@@ -765,7 +816,6 @@ function parseReportCSV(csvData, params) {
             parentAsin: col.parentAsin !== -1 ? get(col.parentAsin) : undefined,
         });
     }
-    // Collect diagnostics if enabled
     if (params?.advancedOptions?.includeDiagnostics) {
         const diagnostics = {
             csvParsing: {
@@ -778,8 +828,8 @@ function parseReportCSV(csvData, params) {
                 columnMapping: col,
                 totalRows: out.length,
                 skippedRows: lines.length - headerIdx - 1 - out.length,
-                sampleRows: lines.slice(headerIdx, Math.min(headerIdx + 3, lines.length))
-            }
+                sampleRows: lines.slice(headerIdx, Math.min(headerIdx + 3, lines.length)),
+            },
         };
         return { data: out, diagnostics };
     }
