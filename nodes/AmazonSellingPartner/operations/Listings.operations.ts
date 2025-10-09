@@ -111,60 +111,24 @@ interface SearchListingsResponse {
 
 
 
-// Helper function to auto-extract seller ID from credentials
-async function extractSellerId(this: IExecuteFunctions): Promise<string> {
-	const nodeId = this.getNode().id;
-	
-	try {
-		const credentials = await this.getCredentials('amazonSpApi');
-		
-		// First try direct sellerId from credentials
-		if (credentials.sellerId && typeof credentials.sellerId === 'string') {
-			return credentials.sellerId;
-		}
-
-		// If not available, try to extract from LWA token by making a test API call
-		// Use the marketplace participants API to get our seller ID
-		const response = await SpApiRequest.makeRequest(this, {
-			method: 'GET',
-			endpoint: '/sellers/v1/marketplaceParticipations',
-		});
-
-		if (response.data && response.data.length > 0) {
-			const sellerId = response.data[0].sellerId;
-			if (sellerId) {
-				auditLogger.logEvent({
-					nodeId,
-					action: 'seller_id_extraction',
-					resource: 'credentials',
-					details: { sellerId, source: 'marketplace_participations' },
-					severity: 'low',
-					source: 'system',
-					outcome: 'success'
-				});
-				return sellerId;
-			}
-		}
-
-		throw new Error('Could not auto-extract seller ID. Please ensure your SP-API credentials include sellerId or have marketplace participations configured.');
-	} catch (error) {
-		auditLogger.logEvent({
-			nodeId,
-			action: 'seller_id_extraction',
-			resource: 'credentials',
-			details: { 
-				error: error instanceof Error ? error.message : 'Unknown error',
-				source: 'auto_extraction'
-			},
-			severity: 'high',
-			source: 'system',
-			outcome: 'failure'
-		});
-		throw new NodeOperationError(
-			this.getNode(),
-			`Failed to extract seller ID: ${error instanceof Error ? error.message : 'Unknown error'}`
-		);
-	}
+// Helper function to get seller ID from credentials (required for Listings)
+async function getSellerId(this: IExecuteFunctions): Promise<string> {
+    const nodeId = this.getNode().id;
+    const credentials = await this.getCredentials('amazonSpApi');
+    const sellerId = (credentials as any).sellerId as string | undefined;
+    if (!sellerId || sellerId.trim().length === 0) {
+        auditLogger.logEvent({
+            nodeId,
+            action: 'seller_id_missing',
+            resource: 'credentials',
+            details: {},
+            severity: 'high',
+            source: 'system',
+            outcome: 'failure'
+        });
+        throw new NodeOperationError(this.getNode(), 'Seller ID is required in credentials for Listings operations');
+    }
+    return sellerId;
 }
 
 // Helper function to format listing data for output
@@ -287,8 +251,8 @@ export async function executeListingsOperation(
 				throw new NodeOperationError(this.getNode(), 'Page size must be between 1 and 20');
 			}
 
-			// Auto-extract seller ID
-			const sellerId = await extractSellerId.call(this);
+            // Get seller ID from credentials
+            const sellerId = await getSellerId.call(this);
 			auditLogger.logEvent({
 				nodeId,
 				action: 'seller_id_extracted',
@@ -515,8 +479,8 @@ export async function executeListingsOperation(
 				throw new NodeOperationError(this.getNode(), 'Identifier cannot be empty');
 			}
 
-			// Auto-extract seller ID
-			const sellerId = await extractSellerId.call(this);
+            // Get seller ID from credentials
+            const sellerId = await getSellerId.call(this);
 
 			// Build query parameters
 			const queryParams: any = {

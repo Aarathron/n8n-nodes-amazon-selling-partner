@@ -1,4 +1,5 @@
 import axios, { AxiosResponse } from 'axios';
+import { createHash } from 'crypto';
 import { ICredentialDataDecryptedObject, NodeOperationError } from 'n8n-workflow';
 
 interface LwaTokenResponse {
@@ -39,24 +40,27 @@ export class LwaClient {
 		return newToken.access_token;
 	}
 
-	private static async fetchAccessToken(credentials: ICredentialDataDecryptedObject): Promise<LwaTokenResponse> {
+    private static async fetchAccessToken(credentials: ICredentialDataDecryptedObject): Promise<LwaTokenResponse> {
 		try {
-			const response: AxiosResponse<LwaTokenResponse> = await axios.post(
-				this.TOKEN_ENDPOINT,
-				{
-					grant_type: 'refresh_token',
-					refresh_token: credentials.lwaRefreshToken,
-					client_id: credentials.lwaClientId,
-					client_secret: credentials.lwaClientSecret,
-				},
-				{
-					headers: {
-						'Content-Type': 'application/x-www-form-urlencoded',
-						'User-Agent': 'n8n-amazon-sp-api/1.0.0',
-					},
-					timeout: 30000,
-				}
-			);
+            // LWA requires application/x-www-form-urlencoded encoding
+            const body = new URLSearchParams({
+                grant_type: 'refresh_token',
+                refresh_token: String(credentials.lwaRefreshToken || ''),
+                client_id: String(credentials.lwaClientId || ''),
+                client_secret: String(credentials.lwaClientSecret || ''),
+            });
+
+            const response: AxiosResponse<LwaTokenResponse> = await axios.post(
+                this.TOKEN_ENDPOINT,
+                body.toString(),
+                {
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'User-Agent': 'n8n-amazon-sp-api/1.0.0',
+                    },
+                    timeout: 30000,
+                }
+            );
 
 			return response.data;
 		} catch (error) {
@@ -75,10 +79,13 @@ export class LwaClient {
 		}
 	}
 
-	private static getCacheKey(credentials: ICredentialDataDecryptedObject): string {
-		// Create a cache key based on client ID to avoid token conflicts
-		return `lwa_${credentials.lwaClientId}`;
-	}
+    private static getCacheKey(credentials: ICredentialDataDecryptedObject): string {
+        // Cache per (clientId + refreshToken) to avoid cross-account token reuse
+        const clientId = String(credentials.lwaClientId || '');
+        const refreshToken = String(credentials.lwaRefreshToken || '');
+        const tokenHash = createHash('sha256').update(refreshToken).digest('hex').slice(0, 16);
+        return `lwa_${clientId}_${tokenHash}`;
+    }
 
 	static clearCache(credentials?: ICredentialDataDecryptedObject): void {
 		if (credentials) {

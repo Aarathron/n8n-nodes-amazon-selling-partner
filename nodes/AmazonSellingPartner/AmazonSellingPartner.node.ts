@@ -41,7 +41,7 @@ export class AmazonSellingPartner implements INodeType {
 			},
 		],
 		requestDefaults: {
-			baseURL: '={{$credentials.spApiEndpoint || $self["getSpApiEndpoint"]($credentials.awsRegion, $credentials.environment)}}',
+			baseURL: '={{$credentials.advancedOptions.spApiEndpoint || ($credentials.environment === "sandbox" ? ($credentials.awsRegion === "eu-west-1" ? "https://sandbox.sellingpartnerapi-eu.amazon.com" : ($credentials.awsRegion === "us-west-2" ? "https://sandbox.sellingpartnerapi-fe.amazon.com" : "https://sandbox.sellingpartnerapi-na.amazon.com")) : ($credentials.awsRegion === "eu-west-1" ? "https://sellingpartnerapi-eu.amazon.com" : ($credentials.awsRegion === "us-west-2" ? "https://sellingpartnerapi-fe.amazon.com" : "https://sellingpartnerapi-na.amazon.com")))}}',
 			headers: {
 				'Accept': 'application/json',
 				'Content-Type': 'application/json',
@@ -106,18 +106,19 @@ export class AmazonSellingPartner implements INodeType {
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
-		
-		const resource = this.getNodeParameter('resource', 0) as string;
-		const operation = this.getNodeParameter('operation', 0) as string;
 
-		try {
-			for (let i = 0; i < items.length; i++) {
+		for (let i = 0; i < items.length; i++) {
+			try {
+				const resource = this.getNodeParameter('resource', i) as string;
+				const operation = this.getNodeParameter('operation', i) as string;
+
 				switch (resource) {
-					case 'orders':
+					case 'orders': {
 						const orderResults = await executeOrdersOperation.call(this, operation, i);
 						returnData.push(...orderResults);
 						break;
-					case 'invoices':
+					}
+					case 'invoices': {
 						let invoiceResults: INodeExecutionData[] = [];
 						switch (operation) {
 							case 'getGstReport':
@@ -134,35 +135,48 @@ export class AmazonSellingPartner implements INodeType {
 						}
 						returnData.push(...invoiceResults);
 						break;
-					case 'shipments':
+					}
+					case 'shipments': {
 						const shipmentResults = await executeShipmentsOperation.call(this, operation, i);
 						returnData.push(...shipmentResults);
 						break;
-					case 'listings':
+					}
+					case 'listings': {
 						const listingResults = await executeListingsOperation.call(this, operation, i);
 						returnData.push(...listingResults);
 						break;
-					case 'finance':
+					}
+					case 'finance': {
 						const financeResults = await executeFinanceOperation.call(this, operation, i);
 						returnData.push(...financeResults);
 						break;
-					case 'analytics':
+					}
+					case 'analytics': {
 						const analyticsResults = await executeAnalyticsOperation.call(this, operation, i);
 						returnData.push(...analyticsResults);
 						break;
+					}
 					default:
 						throw new NodeOperationError(this.getNode(), `Unknown resource: ${resource}`);
 				}
+			} catch (error) {
+				if (this.continueOnFail()) {
+					const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+					returnData.push({
+						json: { error: errorMessage },
+						pairedItem: { item: i },
+					});
+					continue;
+				}
+				if (error instanceof NodeOperationError) {
+					throw error;
+				}
+				const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+				throw new NodeOperationError(this.getNode(), `Amazon SP-API error: ${errorMessage}`);
 			}
-
-			return [this.helpers.returnJsonArray(returnData)];
-		} catch (error) {
-			if (error instanceof NodeOperationError) {
-				throw error;
-			}
-			const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-			throw new NodeOperationError(this.getNode(), `Amazon SP-API error: ${errorMessage}`);
 		}
+
+		return [returnData];
 	}
 
 
