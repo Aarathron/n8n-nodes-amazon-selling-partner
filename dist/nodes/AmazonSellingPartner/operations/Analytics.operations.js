@@ -27,7 +27,7 @@ async function validateAnalyticsAccess(_index) {
         // Test Data Kiosk access
         let dataKioskAccess = false;
         let reportsAccess = false;
-        let errors = [];
+        const errors = [];
         try {
             const dataKioskEndpoint = (0, constants_1.buildDataKioskEndpoint)('2024-04-24', 'salesAndTraffic');
             await SpApiRequest_1.SpApiRequest.makeRequest(this, {
@@ -395,11 +395,12 @@ function calculateDateRange(preset, customDays, _timezone) {
             startDate = new Date(now.getFullYear(), now.getMonth(), 1);
             endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
             break;
-        case 'qtd':
+        case 'qtd': {
             const quarter = Math.floor(now.getMonth() / 3);
             startDate = new Date(now.getFullYear(), quarter * 3, 1);
             endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
             break;
+        }
         case 'ytd':
             startDate = new Date(now.getFullYear(), 0, 1);
             endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);

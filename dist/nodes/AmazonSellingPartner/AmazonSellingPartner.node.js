@@ -35,7 +35,7 @@ class AmazonSellingPartner {
             },
         ],
         requestDefaults: {
-            baseURL: '={{$credentials.spApiEndpoint || $self["getSpApiEndpoint"]($credentials.awsRegion, $credentials.environment)}}',
+            baseURL: '={{$credentials.advancedOptions.spApiEndpoint || ($credentials.environment === "sandbox" ? ($credentials.awsRegion === "eu-west-1" ? "https://sandbox.sellingpartnerapi-eu.amazon.com" : ($credentials.awsRegion === "us-west-2" ? "https://sandbox.sellingpartnerapi-fe.amazon.com" : "https://sandbox.sellingpartnerapi-na.amazon.com")) : ($credentials.awsRegion === "eu-west-1" ? "https://sellingpartnerapi-eu.amazon.com" : ($credentials.awsRegion === "us-west-2" ? "https://sellingpartnerapi-fe.amazon.com" : "https://sellingpartnerapi-na.amazon.com")))}}',
             headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
@@ -99,16 +99,17 @@ class AmazonSellingPartner {
     async execute() {
         const items = this.getInputData();
         const returnData = [];
-        const resource = this.getNodeParameter('resource', 0);
-        const operation = this.getNodeParameter('operation', 0);
-        try {
-            for (let i = 0; i < items.length; i++) {
+        for (let i = 0; i < items.length; i++) {
+            try {
+                const resource = this.getNodeParameter('resource', i);
+                const operation = this.getNodeParameter('operation', i);
                 switch (resource) {
-                    case 'orders':
+                    case 'orders': {
                         const orderResults = await Orders_operations_1.executeOrdersOperation.call(this, operation, i);
                         returnData.push(...orderResults);
                         break;
-                    case 'invoices':
+                    }
+                    case 'invoices': {
                         let invoiceResults = [];
                         switch (operation) {
                             case 'getGstReport':
@@ -125,35 +126,48 @@ class AmazonSellingPartner {
                         }
                         returnData.push(...invoiceResults);
                         break;
-                    case 'shipments':
+                    }
+                    case 'shipments': {
                         const shipmentResults = await Shipments_operations_1.executeShipmentsOperation.call(this, operation, i);
                         returnData.push(...shipmentResults);
                         break;
-                    case 'listings':
+                    }
+                    case 'listings': {
                         const listingResults = await Listings_operations_1.executeListingsOperation.call(this, operation, i);
                         returnData.push(...listingResults);
                         break;
-                    case 'finance':
+                    }
+                    case 'finance': {
                         const financeResults = await Finance_operations_1.executeFinanceOperation.call(this, operation, i);
                         returnData.push(...financeResults);
                         break;
-                    case 'analytics':
+                    }
+                    case 'analytics': {
                         const analyticsResults = await Analytics_operations_1.executeAnalyticsOperation.call(this, operation, i);
                         returnData.push(...analyticsResults);
                         break;
+                    }
                     default:
                         throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Unknown resource: ${resource}`);
                 }
             }
-            return [this.helpers.returnJsonArray(returnData)];
-        }
-        catch (error) {
-            if (error instanceof n8n_workflow_1.NodeOperationError) {
-                throw error;
+            catch (error) {
+                if (this.continueOnFail()) {
+                    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+                    returnData.push({
+                        json: { error: errorMessage },
+                        pairedItem: { item: i },
+                    });
+                    continue;
+                }
+                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                    throw error;
+                }
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Amazon SP-API error: ${errorMessage}`);
             }
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Amazon SP-API error: ${errorMessage}`);
         }
+        return [returnData];
     }
 }
 exports.AmazonSellingPartner = AmazonSellingPartner;

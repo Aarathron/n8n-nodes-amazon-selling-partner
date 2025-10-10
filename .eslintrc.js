@@ -18,5 +18,9 @@ module.exports = {
     '@typescript-eslint/explicit-function-return-type': 'off',
     '@typescript-eslint/no-explicit-any': 'warn',
   },
-  ignorePatterns: ['dist/**', 'node_modules/**'],
+  ignorePatterns: [
+    'dist/**',
+    'node_modules/**',
+    'nodes/**/__tests__/**',
+  ],
 }; 

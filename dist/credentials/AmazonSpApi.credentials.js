@@ -85,6 +85,14 @@ class AmazonSpApi {
             description: 'Login with Amazon (LWA) Refresh Token obtained during authorization',
         },
         {
+            displayName: 'Seller ID',
+            name: 'sellerId',
+            type: 'string',
+            default: '',
+            required: false,
+            description: 'Your Amazon Seller ID. Required for Listings operations.',
+        },
+        {
             displayName: 'Advanced Options',
             name: 'advancedOptions',
             type: 'collection',
@@ -138,7 +146,7 @@ class AmazonSpApi {
     };
     test = {
         request: {
-            baseURL: '={{$credentials.spApiEndpoint || $self["getSpApiEndpoint"]($credentials.awsRegion, $credentials.environment)}}',
+            baseURL: '={{$credentials.advancedOptions.spApiEndpoint || ($credentials.environment === "sandbox" ? ($credentials.awsRegion === "eu-west-1" ? "https://sandbox.sellingpartnerapi-eu.amazon.com" : ($credentials.awsRegion === "us-west-2" ? "https://sandbox.sellingpartnerapi-fe.amazon.com" : "https://sandbox.sellingpartnerapi-na.amazon.com")) : ($credentials.awsRegion === "eu-west-1" ? "https://sellingpartnerapi-eu.amazon.com" : ($credentials.awsRegion === "us-west-2" ? "https://sellingpartnerapi-fe.amazon.com" : "https://sellingpartnerapi-na.amazon.com")))}}',
             url: '/sellers/v1/marketplaceParticipations',
             method: 'GET',
         },

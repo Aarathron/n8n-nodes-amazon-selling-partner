@@ -91,9 +91,9 @@ async function validateAnalyticsAccess(
 	
 	try {
 		// Test Data Kiosk access
-		let dataKioskAccess = false;
-		let reportsAccess = false;
-		let errors: string[] = [];
+        let dataKioskAccess = false;
+        let reportsAccess = false;
+        const errors: string[] = [];
 
 		try {
 			const dataKioskEndpoint = buildDataKioskEndpoint('2024-04-24', 'salesAndTraffic');
@@ -517,11 +517,12 @@ function calculateDateRange(preset: string, customDays: number, _timezone: strin
 			startDate = new Date(now.getFullYear(), now.getMonth(), 1);
 			endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
 			break;
-		case 'qtd':
-			const quarter = Math.floor(now.getMonth() / 3);
-			startDate = new Date(now.getFullYear(), quarter * 3, 1);
-			endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-			break;
+        case 'qtd': {
+            const quarter = Math.floor(now.getMonth() / 3);
+            startDate = new Date(now.getFullYear(), quarter * 3, 1);
+            endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+            break;
+        }
 		case 'ytd':
 			startDate = new Date(now.getFullYear(), 0, 1);
 			endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);

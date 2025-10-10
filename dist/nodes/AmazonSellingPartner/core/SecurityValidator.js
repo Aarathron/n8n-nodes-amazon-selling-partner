@@ -16,6 +16,7 @@ class SecurityValidator {
         /\.\.\//,
         /\.\.\\/,
         // Null bytes
+        // eslint-disable-next-line no-control-regex
         /\x00/,
     ];
     marketplaceIdPattern = /^[A-Z0-9]{10,15}$/;
@@ -142,6 +143,7 @@ class SecurityValidator {
             return String(input);
         }
         // Remove null bytes
+        // eslint-disable-next-line no-control-regex
         let sanitized = input.replace(/\x00/g, '');
         // Encode HTML entities
         sanitized = sanitized
@@ -151,6 +153,7 @@ class SecurityValidator {
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#x27;');
         // Remove control characters except tabs, newlines, and carriage returns
+        // eslint-disable-next-line no-control-regex
         sanitized = sanitized.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
         return sanitized.trim();
     }

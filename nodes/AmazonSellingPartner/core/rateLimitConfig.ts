@@ -52,21 +52,21 @@ export const RATE_LIMIT_GROUPS: Record<string, RateLimitConfig> = {
 // Endpoint pattern to group mapping
 export const ENDPOINT_TO_GROUP: Array<{ pattern: RegExp; group: string }> = [
 	// Orders API patterns
-	{ pattern: /^\/orders\/v0\/orders\/[^\/]+\/orderItems/, group: 'orders-detail' },
-	{ pattern: /^\/orders\/v0\/orders\/[^\/]+\/orderAddress/, group: 'orders-detail' },
-	{ pattern: /^\/orders\/v0\/orders\/[^\/]+\/buyerInfo/, group: 'orders-detail' },
-	{ pattern: /^\/orders\/v0\/orders\/[^\/]+\/orderItemsBuyerInfo/, group: 'orders-detail' },
-	{ pattern: /^\/orders\/v0\/orders\/[^\/]+\/regulatedInfo/, group: 'orders-detail' },
-	{ pattern: /^\/orders\/v0\/orders\/[^\/]+$/, group: 'orders-detail' }, // getOrder
+	{ pattern: /^\/orders\/v0\/orders\/[^/]+\/orderItems/, group: 'orders-detail' },
+	{ pattern: /^\/orders\/v0\/orders\/[^/]+\/orderAddress/, group: 'orders-detail' },
+	{ pattern: /^\/orders\/v0\/orders\/[^/]+\/buyerInfo/, group: 'orders-detail' },
+	{ pattern: /^\/orders\/v0\/orders\/[^/]+\/orderItemsBuyerInfo/, group: 'orders-detail' },
+	{ pattern: /^\/orders\/v0\/orders\/[^/]+\/regulatedInfo/, group: 'orders-detail' },
+	{ pattern: /^\/orders\/v0\/orders\/[^/]+$/, group: 'orders-detail' }, // getOrder
 	{ pattern: /^\/orders\/v0\/orders\/?(\?.*)?$/, group: 'orders-list' }, // getOrders
-	{ pattern: /^\/orders\/v0\/orders\/[^\/]+\/shipment/, group: 'orders-update' },
-	{ pattern: /^\/orders\/v0\/orders\/[^\/]+\/shipmentConfirmation$/, group: 'orders-update' },
-	{ pattern: /^\/orders\/v0\/orders\/[^\/]+\/shipmentStatus$/, group: 'orders-update' },
+	{ pattern: /^\/orders\/v0\/orders\/[^/]+\/shipment/, group: 'orders-update' },
+	{ pattern: /^\/orders\/v0\/orders\/[^/]+\/shipmentConfirmation$/, group: 'orders-update' },
+	{ pattern: /^\/orders\/v0\/orders\/[^/]+\/shipmentStatus$/, group: 'orders-update' },
 	
 	// Reports API patterns
 	{ pattern: /^\/reports\/2021-06-30\/reports\/?(\?.*)?$/, group: 'reports' }, // createReport, getReports
-	{ pattern: /^\/reports\/2021-06-30\/reports\/[^\/]+$/, group: 'reports' }, // getReport
-	{ pattern: /^\/reports\/2021-06-30\/documents\/[^\/]+$/, group: 'reports' }, // getReportDocument
+	{ pattern: /^\/reports\/2021-06-30\/reports\/[^/]+$/, group: 'reports' }, // getReport
+	{ pattern: /^\/reports\/2021-06-30\/documents\/[^/]+$/, group: 'reports' }, // getReportDocument
 	
 	// Analytics API patterns
 	{ pattern: /^\/analytics\/\d{4}-\d{2}-\d{2}\/.*$/, group: 'analytics' }, // Analytics API endpoints

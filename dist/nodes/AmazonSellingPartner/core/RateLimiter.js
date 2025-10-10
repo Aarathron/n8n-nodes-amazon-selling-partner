@@ -38,7 +38,7 @@ class RateLimiter {
             }
             else {
                 // Use local token bucket
-                await this.refillTokens(rateLimit.bucket);
+                await this.refillTokens(groupKey, rateLimit.bucket);
                 // If we have tokens, consume one and proceed
                 if (rateLimit.bucket.tokens >= 1) {
                     rateLimit.bucket.tokens -= 1;
@@ -157,7 +157,7 @@ class RateLimiter {
         }
         return this.limits.get(groupKey);
     }
-    async refillTokens(bucket) {
+    async refillTokens(groupKey, bucket) {
         const now = Date.now();
         const timePassed = (now - bucket.lastRefill) / 1000; // seconds
         const tokensToAdd = timePassed * bucket.refillRate;
@@ -165,7 +165,7 @@ class RateLimiter {
         bucket.lastRefill = now;
         // Update distributed backend if available
         if (this.distributedBackend) {
-            await this.distributedBackend.refillTokens('', bucket.tokens, bucket.maxTokens);
+            await this.distributedBackend.refillTokens(groupKey, bucket.tokens, bucket.maxTokens);
         }
     }
     processQueue(groupKey) {
@@ -189,7 +189,7 @@ class RateLimiter {
                 }
                 else {
                     // Use local bucket
-                    await this.refillTokens(rateLimit.bucket);
+                    await this.refillTokens(groupKey, rateLimit.bucket);
                     while (rateLimit.requestQueue.length > 0 && rateLimit.bucket.tokens >= 1) {
                         const queueItem = rateLimit.requestQueue.shift();
                         rateLimit.bucket.tokens -= 1;

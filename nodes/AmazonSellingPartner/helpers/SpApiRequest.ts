@@ -42,8 +42,8 @@ export class SpApiRequest {
 		try {
 			const credentials = await executeFunctions.getCredentials('amazonSpApi');
 			
-			// Check if we should use AWS signing
-			const useAwsSigning = this.shouldUseAwsSigning(credentials);
+            // SP-API requires AWS SigV4 signing for all requests
+            const useAwsSigning = true;
 			
 			// Security validation (modified for optional AWS credentials)
 			const credentialValidation = this.validateCredentials(credentials, useAwsSigning);
@@ -113,10 +113,11 @@ export class SpApiRequest {
 			auditLogger.logAuthentication(nodeId, 'LWA', true, { endpoint: options.endpoint });
 
 			// Prepare headers
-			const headers = {
+            const headers = {
 				'Accept': options.responseType === 'json' ? 'application/json' : '*/*',
 				'Content-Type': 'application/json',
 				'User-Agent': 'n8n-amazon-sp-api/1.0.0',
+                'x-amz-user-agent': 'n8n-amazon-sp-api/1.0.0',
 				'x-amz-access-token': accessToken,
 				...options.headers,
 			};
@@ -231,27 +232,7 @@ export class SpApiRequest {
 		}
 	}
 
-	private static shouldUseAwsSigning(credentials: ICredentialDataDecryptedObject): boolean {
-		// Check if user explicitly enabled AWS signing
-		const advancedOptions = credentials.advancedOptions as any;
-		if (advancedOptions?.useAwsSigning) {
-			return true;
-		}
-
-		// Check if AWS credentials are provided (backwards compatibility)
-		const hasAwsCredentials = credentials.awsAccessKeyId && credentials.awsSecretAccessKey;
-		if (hasAwsCredentials) {
-			return true;
-		}
-
-		// Check if AWS credentials are in advanced options
-		const hasAdvancedAwsCredentials = advancedOptions?.awsAccessKeyId && advancedOptions?.awsSecretAccessKey;
-		if (hasAdvancedAwsCredentials) {
-			return true;
-		}
-
-		return false;
-	}
+    // removed: legacy helper
 
 	private static validateCredentials(
 		credentials: ICredentialDataDecryptedObject, 
